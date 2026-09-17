@@ -313,16 +313,25 @@ export const Footer: React.FC = () => {
         {/* Bottom Legal & Copyright */}
         <div className="pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-stone-400">
           <div className="flex flex-wrap gap-4 justify-center md:justify-start">
-            <button onClick={() => setCurrentView('terms')} className="hover:text-amber-400">
+            <button onClick={() => setCurrentView('terms')} className="hover:text-amber-400 cursor-pointer">
               {lang === 'bn' ? 'নিয়ম ও শর্তাবলী' : 'Terms & Conditions'}
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => setCurrentView('privacy')} className="hover:text-amber-400">
+            <button onClick={() => setCurrentView('privacy')} className="hover:text-amber-400 cursor-pointer">
               {lang === 'bn' ? 'গোপনীয়তা নীতি' : 'Privacy Policy'}
             </button>
             <span className="text-stone-700">•</span>
-            <button onClick={() => setCurrentView('cancellation')} className="hover:text-amber-400">
+            <button onClick={() => setCurrentView('cancellation')} className="hover:text-amber-400 cursor-pointer">
               {lang === 'bn' ? 'বাতিল ও রিফান্ড পলিসি' : 'Cancellation & Refund'}
+            </button>
+            <span className="text-stone-700">•</span>
+            <button 
+              onClick={() => setCurrentView('admin')} 
+              className="hover:text-amber-400 flex items-center gap-1 text-stone-500 hover:text-amber-300 transition-colors cursor-pointer"
+              title="Restricted Staff Portal"
+            >
+              <span>🔒</span>
+              <span>{lang === 'bn' ? 'অ্যাডমিন পোর্টাল' : 'Admin Login'}</span>
             </button>
           </div>
 

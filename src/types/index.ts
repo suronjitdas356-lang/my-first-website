@@ -10,7 +10,10 @@ export type PaymentStatus =
   | 'Verified' 
   | 'Failed' 
   | 'Refund Processing' 
-  | 'Refunded';
+  | 'Refunded'
+  | 'Paid'
+  | 'Unpaid'
+  | 'Partial';
 
 export type BookingStatus = 
   | 'Pending' 
@@ -69,9 +72,11 @@ export interface TourPackage {
   specialInstructionsBn: string[];
   specialInstructionsEn: string[];
   discountPercent?: number;
+  discountPrice?: number;
   originalPriceAdult?: number;
   bookingDeadline: string;
   featured?: boolean;
+  published?: boolean;
 }
 
 export interface TravelerDetail {
@@ -116,6 +121,8 @@ export interface Booking {
   transactionId: string;
   paymentStatus: PaymentStatus;
   bookingStatus: BookingStatus;
+  paidAmount?: number;
+  dueAmount?: number;
   createdAt: string;
   verifiedAt?: string;
   verifiedBy?: string;

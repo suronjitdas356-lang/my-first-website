@@ -1,25 +1,34 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
-  Language, 
   TourPackage, 
   Booking, 
-  TeamMember, 
   CustomerReview, 
+  TeamMember, 
   SupportTicket, 
-  Coupon 
-} from '../types';
+  Coupon, 
+  Language 
+} from '../types/index';
 import { 
   INITIAL_TOURS, 
-  FOUNDING_TEAM, 
   INITIAL_BOOKINGS, 
   INITIAL_REVIEWS, 
-  INITIAL_TICKETS, 
+  INITIAL_TEAM, 
   INITIAL_COUPONS 
 } from '../data/initialData';
+import { api, DashboardStats } from '../services/api';
+import { CompanySettings, AdminNotification } from '../../server/db';
 
 interface ToastState {
+  id: string;
   message: string;
   type: 'success' | 'error' | 'info';
+}
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 }
 
 interface AppContextType {
@@ -30,13 +39,15 @@ interface AppContextType {
   selectedTourId: string | null;
   setSelectedTourId: (id: string | null) => void;
   tours: TourPackage[];
-  addTour: (tour: TourPackage) => void;
-  updateTour: (tour: TourPackage) => void;
-  deleteTour: (id: string) => void;
+  refreshTours: () => Promise<void>;
+  addTour: (tour: Partial<TourPackage>) => Promise<void>;
+  updateTour: (tour: TourPackage) => Promise<void>;
+  deleteTour: (id: string) => Promise<void>;
   bookings: Booking[];
-  addBooking: (booking: Booking) => void;
-  updateBooking: (booking: Booking) => void;
-  verifyPayment: (bookingId: string, verifierName: string) => void;
+  refreshBookings: () => Promise<void>;
+  addBooking: (booking: Booking) => Promise<Booking>;
+  updateBooking: (updated: Booking) => Promise<void>;
+  verifyPayment: (bookingId: string, verifierName: string) => Promise<void>;
   updateCheckIn: (bookingId: string, travelerId: string, checkedIn: boolean) => void;
   wishlist: string[];
   toggleWishlist: (tourId: string) => void;
@@ -56,10 +67,29 @@ interface AppContextType {
   coupons: Coupon[];
   activeUser: { name: string; phone: string; email: string; address: string };
   setActiveUser: React.Dispatch<React.SetStateAction<{ name: string; phone: string; email: string; address: string }>>;
+  
+  // Admin & Security
+  isAdminAuthenticated: boolean;
   isAdminMode: boolean;
   setIsAdminMode: (mode: boolean) => void;
+  adminUser: AdminUser | null;
+  adminToken: string | null;
+  adminLogin: (email: string, password: string) => Promise<boolean>;
+  adminLogout: () => Promise<void>;
+  adminActiveTab: string;
+  setAdminActiveTab: (tab: string) => void;
   adminRole: string;
   setAdminRole: (role: string) => void;
+  adminNotifications: AdminNotification[];
+  refreshAdminNotifications: () => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+
+  // Settings
+  companySettings: CompanySettings | null;
+  refreshCompanySettings: () => Promise<void>;
+  updateCompanySettings: (settings: Partial<CompanySettings>) => Promise<boolean>;
+
   toast: ToastState | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   getNextBookingId: () => string;
@@ -73,96 +103,313 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return (saved === 'en' || saved === 'bn') ? saved : 'bn';
   });
 
-  const [currentView, setCurrentViewState] = useState<string>('home');
+  const [currentView, setCurrentViewState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      if (path === '/admin' || path.startsWith('/admin/')) {
+        return 'admin';
+      }
+      const hash = window.location.hash.replace('#', '');
+      if (hash) return hash;
+    }
+    return 'home';
+  });
   const [selectedTourId, setSelectedTourId] = useState<string | null>(null);
 
-  const [tours, setTours] = useState<TourPackage[]>(() => {
-    const saved = localStorage.getItem('tb_tours');
-    if (saved) {
-      try { return JSON.parse(saved); } catch { /* ignore */ }
-    }
-    return INITIAL_TOURS;
-  });
-
-  const [bookings, setBookings] = useState<Booking[]>(() => {
-    const saved = localStorage.getItem('tb_bookings');
-    if (saved) {
-      try { return JSON.parse(saved); } catch { /* ignore */ }
-    }
-    return INITIAL_BOOKINGS;
-  });
+  const [tours, setTours] = useState<TourPackage[]>(INITIAL_TOURS);
+  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
 
   const [wishlist, setWishlist] = useState<string[]>(() => {
     const saved = localStorage.getItem('tb_wishlist');
     if (saved) {
       try { return JSON.parse(saved); } catch { /* ignore */ }
     }
-    return ['tb-tour-001'];
+    return [];
   });
 
-  const [compareList, setCompareList] = useState<string[]>([]);
-  const [team, setTeam] = useState<TeamMember[]>(FOUNDING_TEAM);
+  const [compareList, setCompareList] = useState<string[]>(() => {
+    const saved = localStorage.getItem('tb_compare');
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore */ }
+    }
+    return [];
+  });
+
+  const [team, setTeam] = useState<TeamMember[]>(INITIAL_TEAM);
   const [reviews, setReviews] = useState<CustomerReview[]>(INITIAL_REVIEWS);
-  const [tickets, setTickets] = useState<SupportTicket[]>(INITIAL_TICKETS);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [coupons] = useState<Coupon[]>(INITIAL_COUPONS);
 
-  const [activeUser, setActiveUser] = useState({
-    name: 'দেবাশীষ মুখার্জী',
-    phone: '01711223344',
-    email: 'debashis.mukherjee@example.com',
-    address: 'ওয়ারী, ঢাকা'
+  const [activeUser, setActiveUser] = useState<{ name: string; phone: string; email: string; address: string }>(() => {
+    const saved = localStorage.getItem('tb_user');
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore */ }
+    }
+    return { name: '', phone: '', email: '', address: '' };
   });
 
-  const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
+  // Admin authentication state
+  const [adminToken, setAdminToken] = useState<string | null>(() => localStorage.getItem('tb_admin_token'));
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(() => {
+    const saved = localStorage.getItem('tb_admin_user');
+    if (saved) {
+      try { return JSON.parse(saved); } catch { /* ignore */ }
+    }
+    return null;
+  });
+  const [isAdminMode, setIsAdminMode] = useState<boolean>(() => !!localStorage.getItem('tb_admin_token'));
   const [adminRole, setAdminRole] = useState<string>('Super Admin');
+  const [adminActiveTab, setAdminActiveTab] = useState<string>('dashboard');
+  const [adminNotifications, setAdminNotifications] = useState<AdminNotification[]>([]);
+  const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+
   const [toast, setToast] = useState<ToastState | null>(null);
-
-  // Persistence
-  useEffect(() => {
-    localStorage.setItem('tb_lang', lang);
-  }, [lang]);
-
-  useEffect(() => {
-    localStorage.setItem('tb_tours', JSON.stringify(tours));
-  }, [tours]);
-
-  useEffect(() => {
-    localStorage.setItem('tb_bookings', JSON.stringify(bookings));
-  }, [bookings]);
-
-  useEffect(() => {
-    localStorage.setItem('tb_wishlist', JSON.stringify(wishlist));
-  }, [wishlist]);
 
   const setLang = (newLang: Language) => {
     setLangState(newLang);
+    localStorage.setItem('tb_lang', newLang);
   };
 
   const setCurrentView = (view: string) => {
     setCurrentViewState(view);
+    if (typeof window !== 'undefined') {
+      if (view === 'admin') {
+        if (window.location.pathname !== '/admin') {
+          window.history.pushState({ view: 'admin' }, '', '/admin');
+        }
+      } else if (view === 'home') {
+        if (window.location.pathname !== '/') {
+          window.history.pushState({ view: 'home' }, '', '/');
+        }
+      } else {
+        window.history.pushState({ view }, '', `/#${view}`);
+      }
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path === '/admin' || path.startsWith('/admin/')) {
+        setCurrentViewState('admin');
+      } else {
+        const hash = window.location.hash.replace('#', '');
+        setCurrentViewState(hash || 'home');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-    setToast({ message, type });
+    const id = Date.now().toString();
+    setToast({ id, message, type });
     setTimeout(() => {
-      setToast(null);
+      setToast(current => (current?.id === id ? null : current));
     }, 4000);
   };
 
-  const addTour = (tour: TourPackage) => {
-    setTours(prev => [tour, ...prev]);
-    showToast(lang === 'bn' ? 'ট্যুর প্যাকেজ সফলভাবে যুক্ত হয়েছে!' : 'Tour package added successfully!', 'success');
+  // Initial data loading from server
+  const refreshTours = useCallback(async () => {
+    try {
+      const data = await api.getPublicTours();
+      if (data && data.length) {
+        setTours(data);
+      }
+    } catch (err) {
+      console.warn('Could not fetch tours from server, using fallback:', err);
+    }
+  }, []);
+
+  const refreshCompanySettings = useCallback(async () => {
+    try {
+      const s = await api.getPublicSettings();
+      if (s) setCompanySettings(s);
+    } catch (err) {
+      console.warn('Could not fetch company settings from server:', err);
+    }
+  }, []);
+
+  const refreshBookings = useCallback(async () => {
+    if (!adminToken) return;
+    try {
+      const data = await api.getAdminBookings();
+      if (data) setBookings(data);
+    } catch (err) {
+      console.warn('Could not fetch admin bookings:', err);
+    }
+  }, [adminToken]);
+
+  const refreshAdminNotifications = useCallback(async () => {
+    if (!adminToken) return;
+    try {
+      const data = await api.getAdminNotifications();
+      if (data) setAdminNotifications(data);
+    } catch (err) {
+      console.warn('Could not fetch notifications:', err);
+    }
+  }, [adminToken]);
+
+  // Load initial data on mount
+  useEffect(() => {
+    refreshTours();
+    refreshCompanySettings();
+
+    // Verify existing admin token if present
+    const token = localStorage.getItem('tb_admin_token');
+    if (token) {
+      api.getMe()
+        .then(user => {
+          setAdminUser(user);
+          setIsAdminMode(true);
+        })
+        .catch(() => {
+          localStorage.removeItem('tb_admin_token');
+          localStorage.removeItem('tb_admin_user');
+          setAdminToken(null);
+          setAdminUser(null);
+          setIsAdminMode(false);
+        });
+    }
+  }, [refreshTours, refreshCompanySettings]);
+
+  // Load admin data when adminToken is active
+  useEffect(() => {
+    if (adminToken) {
+      refreshBookings();
+      refreshAdminNotifications();
+    }
+  }, [adminToken, refreshBookings, refreshAdminNotifications]);
+
+  // Save transient user state
+  useEffect(() => {
+    localStorage.setItem('tb_wishlist', JSON.stringify(wishlist));
+  }, [wishlist]);
+
+  useEffect(() => {
+    localStorage.setItem('tb_compare', JSON.stringify(compareList));
+  }, [compareList]);
+
+  useEffect(() => {
+    localStorage.setItem('tb_user', JSON.stringify(activeUser));
+  }, [activeUser]);
+
+  // Admin login action
+  const adminLogin = async (email: string, pass: string): Promise<boolean> => {
+    try {
+      const result = await api.login(email, pass);
+      if (result.success && result.token) {
+        localStorage.setItem('tb_admin_token', result.token);
+        localStorage.setItem('tb_admin_user', JSON.stringify(result.user));
+        setAdminToken(result.token);
+        setAdminUser(result.user);
+        setIsAdminMode(true);
+        setCurrentView('admin');
+        showToast(
+          lang === 'bn' ? `স্বাগতম ${result.user.name}!` : `Welcome ${result.user.name}!`,
+          'success'
+        );
+        refreshBookings();
+        refreshAdminNotifications();
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      showToast(err.message || (lang === 'bn' ? 'লগইন ব্যর্থ হয়েছে।' : 'Login failed.'), 'error');
+      return false;
+    }
   };
 
-  const updateTour = (updated: TourPackage) => {
-    setTours(prev => prev.map(t => t.id === updated.id ? updated : t));
-    showToast(lang === 'bn' ? 'ট্যুর প্যাকেজ আপডেট করা হয়েছে।' : 'Tour package updated.', 'success');
+  // Admin logout action
+  const adminLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // ignore
+    } finally {
+      localStorage.removeItem('tb_admin_token');
+      localStorage.removeItem('tb_admin_user');
+      setAdminToken(null);
+      setAdminUser(null);
+      setIsAdminMode(false);
+      setCurrentView('home');
+      showToast(
+        lang === 'bn' ? 'আপনি সফলভাবে লগআউট করেছেন।' : 'Logged out successfully.',
+        'info'
+      );
+    }
   };
 
-  const deleteTour = (id: string) => {
-    setTours(prev => prev.filter(t => t.id !== id));
-    showToast(lang === 'bn' ? 'ট্যুর প্যাকেজ অপসারিত হয়েছে।' : 'Tour package removed.', 'info');
+  const markNotificationRead = async (id: string) => {
+    try {
+      await api.markNotificationRead(id);
+      setAdminNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.warn('Failed to mark notification read:', err);
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      setAdminNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      showToast(lang === 'bn' ? 'সকল নোটিফিকেশন পঠিত হিসেবে চিহ্নিত হয়েছে।' : 'All notifications marked as read.', 'success');
+    } catch (err) {
+      console.warn('Failed to mark all read:', err);
+    }
+  };
+
+  const updateCompanySettings = async (settings: Partial<CompanySettings>): Promise<boolean> => {
+    try {
+      const res = await api.updateAdminSettings(settings);
+      if (res.success) {
+        setCompanySettings(res.settings);
+        showToast(lang === 'bn' ? 'কোম্পানি সেটিংস সফলভাবে আপডেট হয়েছে!' : 'Company settings updated successfully!', 'success');
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update settings', 'error');
+      return false;
+    }
+  };
+
+  const addTour = async (tourData: Partial<TourPackage>) => {
+    try {
+      const res = await api.createTour(tourData);
+      if (res.success && res.tour) {
+        setTours(prev => [res.tour, ...prev]);
+        showToast(lang === 'bn' ? 'ট্যুর প্যাকেজ সফলভাবে যুক্ত হয়েছে!' : 'Tour package added successfully!', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to add tour', 'error');
+      throw err;
+    }
+  };
+
+  const updateTour = async (updated: TourPackage) => {
+    try {
+      const res = await api.updateTour(updated.id, updated);
+      if (res.success) {
+        setTours(prev => prev.map(t => t.id === updated.id ? res.tour : t));
+        showToast(lang === 'bn' ? 'ট্যুর প্যাকেজ আপডেট করা হয়েছে।' : 'Tour package updated.', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update tour', 'error');
+      throw err;
+    }
+  };
+
+  const deleteTour = async (id: string) => {
+    try {
+      await api.deleteTour(id);
+      setTours(prev => prev.filter(t => t.id !== id));
+      showToast(lang === 'bn' ? 'ট্যুর প্যাকেজ অপসারিত হয়েছে।' : 'Tour package removed.', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete tour', 'error');
+      throw err;
+    }
   };
 
   const getNextBookingId = () => {
@@ -172,61 +419,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return `TBTT-${year}-${padded}`;
   };
 
-  const addBooking = (booking: Booking) => {
-    // Check duplicate TrxID
-    const duplicate = bookings.some(b => b.transactionId.trim().toUpperCase() === booking.transactionId.trim().toUpperCase());
-    if (duplicate) {
-      showToast(
-        lang === 'bn' ? 'এই Transaction ID ইতিপূর্বে ব্যবহার করা হয়েছে!' : 'This Transaction ID has already been submitted!',
-        'error'
-      );
-      throw new Error('Duplicate Transaction ID');
+  const addBooking = async (booking: Booking): Promise<Booking> => {
+    try {
+      const res = await api.submitBooking(booking);
+      if (res.success && res.booking) {
+        setBookings(prev => [res.booking, ...prev]);
+        refreshTours();
+        showToast(
+          lang === 'bn' ? `বুকিং গ্রহণ করা হয়েছে! বুকিং আইডি: ${res.booking.bookingId}` : `Booking received! ID: ${res.booking.bookingId}`,
+          'success'
+        );
+        return res.booking;
+      }
+      throw new Error(res.message || 'Booking submission failed');
+    } catch (err: any) {
+      showToast(err.message || (lang === 'bn' ? 'বুকিং সম্পন্ন করা সম্ভব হয়নি।' : 'Could not complete booking.'), 'error');
+      throw err;
     }
-
-    setBookings(prev => [booking, ...prev]);
-
-    // Update booked seats count in package
-    setTours(prev => prev.map(t => {
-      if (t.id === booking.tourId) {
-        const newBooked = Math.min(t.totalSeats, t.bookedSeats + booking.selectedSeats.length);
-        const newStatus = newBooked >= t.totalSeats ? 'Full' : (newBooked >= t.totalSeats * 0.8 ? 'Almost Full' : t.status);
-        return {
-          ...t,
-          bookedSeats: newBooked,
-          status: newStatus
-        };
-      }
-      return t;
-    }));
-
-    showToast(
-      lang === 'bn' ? `বুকিং গ্রহণ করা হয়েছে! বুকিং আইডি: ${booking.bookingId}` : `Booking received! ID: ${booking.bookingId}`,
-      'success'
-    );
   };
 
-  const updateBooking = (updated: Booking) => {
-    setBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+  const updateBooking = async (updated: Booking) => {
+    try {
+      await api.updateBookingStatus(updated.bookingId, {
+        bookingStatus: updated.bookingStatus,
+        paymentStatus: updated.paymentStatus,
+        paidAmount: (updated as any).paidAmount || 0,
+        notes: updated.notes
+      });
+      setBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+    } catch (err: any) {
+      showToast(err.message || 'Failed to update booking', 'error');
+    }
   };
 
-  const verifyPayment = (bookingId: string, verifierName: string) => {
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 16);
-    setBookings(prev => prev.map(b => {
-      if (b.bookingId === bookingId) {
-        return {
-          ...b,
-          paymentStatus: 'Verified',
-          bookingStatus: 'Confirmed',
-          verifiedAt: now,
-          verifiedBy: verifierName
-        };
-      }
-      return b;
-    }));
-    showToast(
-      lang === 'bn' ? `বুকিং ${bookingId} এর পেমেন্ট ভেরিফাই ও বুকিং কনফার্ম করা হয়েছে!` : `Booking ${bookingId} verified & confirmed!`,
-      'success'
-    );
+  const verifyPayment = async (bookingId: string, verifierName: string) => {
+    try {
+      await api.updateBookingStatus(bookingId, {
+        bookingStatus: 'Confirmed',
+        paymentStatus: 'Verified',
+        notes: `Verified by ${verifierName}`
+      });
+      refreshBookings();
+      showToast(
+        lang === 'bn' ? `বুকিং ${bookingId} এর পেমেন্ট ভেরিফাই ও বুকিং কনফার্ম করা হয়েছে!` : `Booking ${bookingId} verified & confirmed!`,
+        'success'
+      );
+    } catch (err: any) {
+      showToast(err.message || 'Failed to verify payment', 'error');
+    }
   };
 
   const updateCheckIn = (bookingId: string, travelerId: string, checkedIn: boolean) => {
@@ -288,20 +528,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(lang === 'bn' ? 'টিম সদস্যের তথ্য আপডেট করা হয়েছে।' : 'Team member details updated.', 'success');
   };
 
-  const addReview = (reviewData: { customerName: string; tourTitleBn: string; tourTitleEn: string; rating: number; commentBn: string; commentEn: string; travelDate: string }) => {
-    const newRev: CustomerReview = {
-      id: `rev-${Date.now()}`,
-      ...reviewData,
-      approved: false, // Per prompt rules: customer reviews require admin approval before publication!
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    setReviews(prev => [newRev, ...prev]);
-    showToast(
-      lang === 'bn' 
-        ? 'আপনার মতামতের জন্য ধন্যবাদ! অ্যাডমিন পর্যালোচনা শেষে এটি প্রকাশ করা হবে।' 
-        : 'Thank you for your review! It will be published upon admin approval.',
-      'info'
-    );
+  const addReview = async (reviewData: { customerName: string; tourTitleBn: string; tourTitleEn: string; rating: number; commentBn: string; commentEn: string; travelDate: string }) => {
+    try {
+      await api.submitReview(reviewData);
+      showToast(
+        lang === 'bn' 
+          ? 'আপনার মতামতের জন্য ধন্যবাদ! অ্যাডমিন পর্যালোচনা শেষে এটি প্রকাশ করা হবে।' 
+          : 'Thank you for your review! It will be published upon admin approval.',
+        'info'
+      );
+    } catch {
+      showToast('Could not submit review', 'error');
+    }
   };
 
   const approveReview = (id: string) => {
@@ -352,10 +590,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedTourId,
         setSelectedTourId,
         tours,
+        refreshTours,
         addTour,
         updateTour,
         deleteTour,
         bookings,
+        refreshBookings,
         addBooking,
         updateBooking,
         verifyPayment,
@@ -378,10 +618,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         coupons,
         activeUser,
         setActiveUser,
+        isAdminAuthenticated: !!adminToken && !!adminUser,
         isAdminMode,
         setIsAdminMode,
+        adminUser,
+        adminToken,
+        adminLogin,
+        adminLogout,
+        adminActiveTab,
+        setAdminActiveTab,
         adminRole,
         setAdminRole,
+        adminNotifications,
+        refreshAdminNotifications,
+        markNotificationRead,
+        markAllNotificationsRead,
+        companySettings,
+        refreshCompanySettings,
+        updateCompanySettings,
         toast,
         showToast,
         getNextBookingId

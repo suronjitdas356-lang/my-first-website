@@ -678,6 +678,8 @@ export const FOUNDING_TEAM: TeamMember[] = [
   }
 ];
 
+export const INITIAL_TEAM: TeamMember[] = FOUNDING_TEAM;
+
 export const INITIAL_COUPONS: Coupon[] = [
   {
     code: 'TIRTHA2026',

@@ -20,12 +20,23 @@ import { ReviewsView } from './views/ReviewsView';
 import { GalleryView } from './views/GalleryView';
 import { FaqView } from './views/FaqView';
 import { PolicyView } from './views/PolicyView';
+import { AdminLoginView } from './views/admin/AdminLoginView';
 
 import { Phone, MessageCircle, Scale, CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { toBnNum } from './utils/bilingual';
 
 const MainAppContent: React.FC = () => {
-  const { currentView, compareList, lang } = useApp();
+  const { currentView, compareList, lang, isAdminAuthenticated } = useApp();
+
+  // If in admin mode, show dedicated admin interface without customer chrome
+  if (currentView === 'admin') {
+    return (
+      <div className="min-h-screen bg-stone-100 font-sans selection:bg-amber-500 selection:text-white">
+        {isAdminAuthenticated ? <AdminView /> : <AdminLoginView />}
+        <ToastContainer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 text-stone-900 font-sans selection:bg-amber-500 selection:text-white">
@@ -46,7 +57,6 @@ const MainAppContent: React.FC = () => {
         {currentView === 'team' && <TeamView />}
         {currentView === 'contact' && <ContactView />}
         {currentView === 'account' && <AccountView />}
-        {currentView === 'admin' && <AdminView />}
         {currentView === 'reviews' && <ReviewsView />}
         {currentView === 'gallery' && <GalleryView />}
         {currentView === 'faq' && <FaqView />}

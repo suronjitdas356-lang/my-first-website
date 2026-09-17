@@ -1,408 +1,405 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Booking } from '../types';
-import { formatPrice, formatBnDate, toBnNum } from '../utils/bilingual';
-import { TravelPassModal } from '../components/TravelPassModal';
-import { Breadcrumbs } from '../components/Breadcrumbs';
+import { AdminDashboardTab } from './admin/AdminDashboardTab';
+import { AdminToursTab } from './admin/AdminToursTab';
+import { AdminBookingsTab } from './admin/AdminBookingsTab';
+import { AdminCustomersTab } from './admin/AdminCustomersTab';
+import { AdminPaymentsTab } from './admin/AdminPaymentsTab';
+import { AdminReportsTab } from './admin/AdminReportsTab';
+import { AdminNotificationsTab } from './admin/AdminNotificationsTab';
+import { AdminSettingsTab } from './admin/AdminSettingsTab';
+import { formatBnDate, toBnNum } from '../utils/bilingual';
 import { 
-  ShieldCheck, 
-  CreditCard, 
-  Check, 
-  X, 
+  LayoutDashboard, 
+  Compass, 
+  CalendarCheck, 
   Users, 
-  DollarSign, 
-  AlertCircle, 
-  Eye, 
-  Search, 
-  Filter,
-  CheckCircle2,
+  CreditCard, 
+  TrendingUp, 
+  Star, 
+  Bell, 
+  Settings, 
+  LogOut, 
+  ExternalLink, 
+  ShieldCheck, 
+  Menu, 
+  X, 
+  Check, 
   Trash2,
-  Star
+  Lock
 } from 'lucide-react';
 
 export const AdminView: React.FC = () => {
   const { 
     lang, 
-    bookings, 
-    updateBookingPaymentStatus, 
-    updateBookingStatus, 
+    adminUser, 
+    adminLogout, 
+    adminNotifications, 
+    setCurrentView, 
     reviews, 
     approveReview, 
     deleteReview, 
-    tours, 
     showToast 
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'bookings' | 'reviews' | 'packages'>('bookings');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'verified'>('all');
-  const [selectedPassBooking, setSelectedPassBooking] = useState<Booking | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Stats calculation
-  const totalBookingsCount = bookings.length;
-  const pendingVerifications = bookings.filter(b => b.paymentStatus === 'Payment Verification Pending').length;
-  const verifiedBookings = bookings.filter(b => b.paymentStatus === 'Verified');
-  const totalRevenue = verifiedBookings.reduce((sum, b) => sum + b.finalAmount, 0);
-  const totalPilgrims = bookings.reduce((sum, b) => sum + b.adultsCount + b.childrenCount, 0);
+  const unreadNotificationsCount = adminNotifications.filter(n => !n.read).length;
+  const pendingReviewsCount = reviews.filter(r => !r.isApproved).length;
 
-  // Filtered Bookings
-  const filteredBookings = bookings.filter(b => {
-    if (statusFilter === 'pending' && b.paymentStatus !== 'Payment Verification Pending') return false;
-    if (statusFilter === 'verified' && b.paymentStatus !== 'Verified') return false;
-
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      const matchId = b.bookingId.toLowerCase().includes(q);
-      const matchName = b.leadTravelerName.toLowerCase().includes(q);
-      const matchPhone = b.leadMobile.includes(q);
-      const matchTrx = b.transactionId.toLowerCase().includes(q);
-      if (!matchId && !matchName && !matchPhone && !matchTrx) return false;
+  const navItems = [
+    {
+      id: 'dashboard',
+      labelBn: 'ড্যাশবোর্ড',
+      labelEn: 'Dashboard',
+      icon: LayoutDashboard,
+      badge: 0
+    },
+    {
+      id: 'tours',
+      labelBn: 'ট্যুর প্যাকেজ',
+      labelEn: 'Tour Packages',
+      icon: Compass,
+      badge: 0
+    },
+    {
+      id: 'bookings',
+      labelBn: 'বুকিং ও টিকিট',
+      labelEn: 'Bookings & Passes',
+      icon: CalendarCheck,
+      badge: 0
+    },
+    {
+      id: 'customers',
+      labelBn: 'গ্রাহক ডিরেক্টরি',
+      labelEn: 'Customer Directory',
+      icon: Users,
+      badge: 0
+    },
+    {
+      id: 'payments',
+      labelBn: 'পেমেন্ট ও TrxID',
+      labelEn: 'Payments & TrxID',
+      icon: CreditCard,
+      badge: 0
+    },
+    {
+      id: 'reports',
+      labelBn: 'রিপোর্ট ও আয়',
+      labelEn: 'Reports & Revenue',
+      icon: TrendingUp,
+      badge: 0
+    },
+    {
+      id: 'reviews',
+      labelBn: 'রিভিউ অনুমোদন',
+      labelEn: 'Reviews Moderation',
+      icon: Star,
+      badge: pendingReviewsCount
+    },
+    {
+      id: 'notifications',
+      labelBn: 'নোটিফিকেশন',
+      labelEn: 'Notifications',
+      icon: Bell,
+      badge: unreadNotificationsCount
+    },
+    {
+      id: 'settings',
+      labelBn: 'কোম্পানি সেটিংস',
+      labelEn: 'Company Settings',
+      icon: Settings,
+      badge: 0
     }
-    return true;
-  });
+  ];
 
-  const handleVerify = (bookingId: string) => {
-    updateBookingPaymentStatus(bookingId, 'Verified');
-    updateBookingStatus(bookingId, 'Confirmed');
-    showToast(lang === 'bn' ? `বুকিং ${bookingId} এর পেমেন্ট অনুমোদিত ও কনফার্ম করা হয়েছে!` : `Booking ${bookingId} verified!`, 'success');
+  const handleSelectTab = (tabId: string) => {
+    setActiveTab(tabId);
+    setMobileSidebarOpen(false);
   };
 
-  const handleReject = (bookingId: string) => {
-    updateBookingPaymentStatus(bookingId, 'Failed');
-    updateBookingStatus(bookingId, 'Cancelled');
-    showToast(lang === 'bn' ? `বুকিং ${bookingId} বাতিল করা হয়েছে।` : `Booking ${bookingId} rejected.`, 'info');
+  const handleDashboardBookingSelect = (bookingId: string) => {
+    setSelectedBookingId(bookingId);
+    setActiveTab('bookings');
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      
-      {/* Top Header */}
-      <div>
-        <Breadcrumbs
-          items={[
-            { labelBn: 'অ্যাডমিন ও অপারেশনাল কন্ট্রোল', labelEn: 'Admin Operations' }
-          ]}
-        />
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mt-2">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-stone-900 font-bangla flex items-center gap-2">
-              <ShieldCheck className="w-7 h-7 text-amber-700" />
-              <span>{lang === 'bn' ? 'ম্যানেজমেন্ট ও বুকিং ভেরিফিকেশন পোর্টাল' : 'Operations & Booking Portal'}</span>
-            </h1>
-            <p className="text-xs sm:text-sm text-stone-500 font-bangla">
-              {lang === 'bn'
-                ? 'সরাসরি বিকাশ ও নগদ Transaction ID যাচাই, টিকিট অনুমোদন ও রিভিউ ম্যানেজমেন্ট।'
-                : 'Direct bKash/Nagad TrxID reconciliation, ticket approvals, and feedback management.'}
-            </p>
-          </div>
+    <div className="min-h-screen bg-stone-100 flex flex-col">
+      {/* Top Admin Bar */}
+      <header className="bg-stone-900 border-b border-stone-800 text-stone-200 sticky top-0 z-30 px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+            className="md:hidden p-1.5 rounded-lg text-stone-400 hover:text-white hover:bg-stone-800"
+          >
+            {mobileSidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTab('bookings')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === 'bookings' ? 'bg-amber-700 text-white shadow' : 'bg-white border border-stone-200 text-stone-700'}`}
-            >
-              {lang === 'bn' ? `বুকিং তালিকা (${toBnNum(bookings.length)})` : `Bookings (${bookings.length})`}
-            </button>
-            <button
-              onClick={() => setActiveTab('reviews')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === 'reviews' ? 'bg-amber-700 text-white shadow' : 'bg-white border border-stone-200 text-stone-700'}`}
-            >
-              {lang === 'bn' ? `গ্রাহক রিভিউ (${toBnNum(reviews.length)})` : `Reviews (${reviews.length})`}
-            </button>
-            <button
-              onClick={() => setActiveTab('packages')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeTab === 'packages' ? 'bg-amber-700 text-white shadow' : 'bg-white border border-stone-200 text-stone-700'}`}
-            >
-              {lang === 'bn' ? `প্যাকেজ ইনভেন্টরি (${toBnNum(tours.length)})` : `Packages (${tours.length})`}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Real-time KPI Stats Banner */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        
-        <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold text-stone-400 uppercase tracking-wider">
-            {lang === 'bn' ? 'মোট বুকিং' : 'Total Bookings'}
-          </span>
-          <p className="text-2xl font-bold font-mono text-stone-900">
-            {lang === 'bn' ? toBnNum(totalBookingsCount) : totalBookingsCount}
-          </p>
-        </div>
-
-        <div className="bg-amber-50 p-5 rounded-3xl border border-amber-200 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5" />
-            <span>{lang === 'bn' ? 'যাচাই বাকি (Pending)' : 'Pending Verification'}</span>
-          </span>
-          <p className="text-2xl font-bold font-mono text-amber-900">
-            {lang === 'bn' ? toBnNum(pendingVerifications) : pendingVerifications}
-          </p>
-        </div>
-
-        <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-200 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
-            {lang === 'bn' ? 'অনুমোদিত রাজস্ব' : 'Verified Revenue'}
-          </span>
-          <p className="text-2xl font-bold font-mono text-emerald-900">
-            {formatPrice(totalRevenue, lang)}
-          </p>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-sm space-y-1">
-          <span className="text-[11px] font-bold text-stone-400 uppercase tracking-wider">
-            {lang === 'bn' ? 'মোট তীর্থযাত্রী' : 'Total Pilgrims'}
-          </span>
-          <p className="text-2xl font-bold font-mono text-stone-900">
-            {lang === 'bn' ? `${toBnNum(totalPilgrims)} জন` : `${totalPilgrims} Pax`}
-          </p>
-        </div>
-
-      </div>
-
-      {/* TAB 1: BOOKINGS MANAGEMENT */}
-      {activeTab === 'bookings' && (
-        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden space-y-4 p-6">
-          
-          {/* Controls Bar */}
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder={lang === 'bn' ? 'বুকিং আইডি, নাম, ফোন বা TrxID খুঁজুন...' : 'Search by ID, name, phone, TrxID...'}
-                className="w-full pl-9 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-600 to-amber-700 flex items-center justify-center text-stone-950 shadow-md">
+              <ShieldCheck className="w-4 h-4" />
             </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${statusFilter === 'all' ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}
-              >
-                {lang === 'bn' ? 'সকল' : 'All'}
-              </button>
-              <button
-                onClick={() => setStatusFilter('pending')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${statusFilter === 'pending' ? 'bg-amber-600 text-white' : 'bg-stone-100 text-stone-700'}`}
-              >
-                {lang === 'bn' ? 'যাচাই বাকি' : 'Pending'}
-              </button>
-              <button
-                onClick={() => setStatusFilter('verified')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${statusFilter === 'verified' ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-700'}`}
-              >
-                {lang === 'bn' ? 'অনুমোদিত' : 'Verified'}
-              </button>
-            </div>
-          </div>
-
-          {/* Bookings Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[850px]">
-              <thead className="bg-stone-50 border-b border-stone-200 text-xs text-stone-500 uppercase font-semibold">
-                <tr>
-                  <th className="p-3">{lang === 'bn' ? 'বুকিং আইডি' : 'Booking ID'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'যাত্রী ও মোবাইল' : 'Traveler & Phone'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'ট্যুর ও তারিখ' : 'Tour & Date'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'আসন' : 'Seats'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'পেমেন্ট ও TrxID' : 'Payment & TrxID'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'মূল্য' : 'Amount'}</th>
-                  <th className="p-3">{lang === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
-                  <th className="p-3 text-center">{lang === 'bn' ? 'অ্যাকশন' : 'Actions'}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 text-xs">
-                {filteredBookings.map((b) => (
-                  <tr key={b.id} className="hover:bg-amber-50/30 transition-colors">
-                    <td className="p-3 font-mono font-bold text-amber-900 whitespace-nowrap">
-                      {b.bookingId}
-                    </td>
-
-                    <td className="p-3">
-                      <span className="font-bold text-stone-900 block">{b.leadTravelerName}</span>
-                      <span className="text-[11px] font-mono text-stone-500">{b.leadMobile}</span>
-                    </td>
-
-                    <td className="p-3">
-                      <span className="font-semibold text-stone-800 block line-clamp-1">
-                        {lang === 'bn' ? b.tourTitleBn : b.tourTitleEn}
-                      </span>
-                      <span className="text-[11px] text-stone-500">
-                        {formatBnDate(b.travelDate, lang)}
-                      </span>
-                    </td>
-
-                    <td className="p-3 whitespace-nowrap">
-                      <span className="font-mono font-bold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        {b.selectedSeats.join(', ')}
-                      </span>
-                    </td>
-
-                    <td className="p-3">
-                      <div className="space-y-0.5">
-                        <span className="font-semibold text-stone-900 block">{b.paymentMethod}</span>
-                        <span className="font-mono font-bold text-stone-700 block text-[11px]">TrxID: {b.transactionId}</span>
-                        <span className="text-[10px] text-stone-400 font-mono">From: {b.senderMobile}</span>
-                      </div>
-                    </td>
-
-                    <td className="p-3 font-bold text-amber-900 whitespace-nowrap">
-                      {formatPrice(b.finalAmount, lang)}
-                    </td>
-
-                    <td className="p-3 whitespace-nowrap">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                        b.paymentStatus === 'Verified'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {b.paymentStatus === 'Verified' ? (lang === 'bn' ? 'অনুমোদিত' : 'Verified') : (lang === 'bn' ? 'যাচাই বাকি' : 'Pending')}
-                      </span>
-                    </td>
-
-                    <td className="p-3 text-center whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => setSelectedPassBooking(b)}
-                          className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700"
-                          title={lang === 'bn' ? 'পাস দেখুন' : 'View Pass'}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-
-                        {b.paymentStatus !== 'Verified' && (
-                          <button
-                            onClick={() => handleVerify(b.bookingId)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] flex items-center gap-1"
-                            title={lang === 'bn' ? 'পেমেন্ট অনুমোদন করুন' : 'Verify'}
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>{lang === 'bn' ? 'অনুমোদন' : 'Verify'}</span>
-                          </button>
-                        )}
-
-                        {b.bookingStatus !== 'Cancelled' && (
-                          <button
-                            onClick={() => handleReject(b.bookingId)}
-                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700"
-                            title={lang === 'bn' ? 'বাতিল করুন' : 'Reject'}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-        </div>
-      )}
-
-      {/* TAB 2: REVIEWS MODERATION */}
-      {activeTab === 'reviews' && (
-        <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-          <h3 className="text-base font-bold text-stone-900 font-bangla border-b border-stone-100 pb-3">
-            {lang === 'bn' ? 'গ্রাহকদের রিভিউ অনুমোদন ও মডারেশন' : 'Customer Reviews Moderation'}
-          </h3>
-
-          <div className="space-y-4">
-            {reviews.map((rev) => (
-              <div key={rev.id} className="p-4 rounded-2xl border border-stone-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="space-y-1 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-stone-900 text-sm">{rev.customerName}</span>
-                    <div className="flex text-amber-500">
-                      {[...Array(rev.rating)].map((_, i) => (
-                        <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                      ))}
-                    </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${rev.approved ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                      {rev.approved ? 'Published' : 'Awaiting Approval'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-stone-600 font-bangla italic">
-                    “{lang === 'bn' ? rev.commentBn : rev.commentEn}”
-                  </p>
-                  <span className="text-[11px] text-amber-800 font-medium">
-                    {lang === 'bn' ? rev.tourTitleBn : rev.tourTitleEn}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {!rev.approved && (
-                    <button
-                      onClick={() => approveReview(rev.id)}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>{lang === 'bn' ? 'অনুমোদন করুন' : 'Approve'}</span>
-                    </button>
-                  )}
-                  <button
-                    onClick={() => deleteReview(rev.id)}
-                    className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600"
-                    title={lang === 'bn' ? 'মুছে ফেলুন' : 'Delete'}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+            <div>
+              <div className="text-xs sm:text-sm font-bold text-white tracking-wide flex items-center gap-1.5">
+                <span>{lang === 'bn' ? 'তীর্থবন্ধু অ্যাডমিন পোর্টাল' : 'Tirthobondhu Admin Portal'}</span>
+                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">
+                  v2.0 PRO
+                </span>
               </div>
-            ))}
+              <div className="text-[10px] text-stone-400 hidden sm:block">
+                39 No. Kazirbagh, Maniknagar Bishwaroad, Dhaka
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* TAB 3: PACKAGES OVERVIEW */}
-      {activeTab === 'packages' && (
-        <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-          <h3 className="text-base font-bold text-stone-900 font-bangla border-b border-stone-100 pb-3">
-            {lang === 'bn' ? 'প্যাকেজ ইনভেন্টরি ও আসন পরিসংখ্যান' : 'Tour Packages Inventory'}
-          </h3>
+        {/* Top Right Controls */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* View Website Button */}
+          <button
+            onClick={() => setCurrentView('home')}
+            className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-700"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">{lang === 'bn' ? 'ওয়েবসাইটে ফিরে যান' : 'View Website'}</span>
+          </button>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {tours.map((t) => {
-              const rem = Math.max(0, t.totalSeats - t.bookedSeats);
+          {/* Admin User Profile Pill */}
+          <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-stone-800">
+            <div className="w-7 h-7 rounded-full bg-amber-600 text-stone-950 font-bold text-xs flex items-center justify-center">
+              {adminUser?.name?.substring(0, 1) || 'A'}
+            </div>
+            <div className="text-left text-xs">
+              <div className="font-semibold text-stone-200 leading-tight">
+                {adminUser?.name || 'Admin'}
+              </div>
+              <div className="text-[10px] text-stone-400 font-mono">
+                {adminUser?.role || 'SuperAdmin'}
+              </div>
+            </div>
+          </div>
+
+          {/* Logout Button */}
+          <button
+            onClick={adminLogout}
+            title={lang === 'bn' ? 'লগআউট করুন' : 'Sign Out'}
+            className="p-1.5 sm:px-3 sm:py-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs font-semibold flex items-center gap-1.5 border border-rose-800/40 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{lang === 'bn' ? 'লগআউট' : 'Logout'}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Container: Sidebar + Content */}
+      <div className="flex flex-1 max-w-7xl w-full mx-auto px-2 sm:px-4 lg:px-6 py-6 gap-6">
+        {/* Desktop Sidebar */}
+        <aside className="hidden md:block w-64 shrink-0">
+          <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm p-3 sticky top-20 space-y-1">
+            <div className="px-3 py-2 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+              {lang === 'bn' ? 'ম্যানেজমেন্ট মেনু' : 'Operations Menu'}
+            </div>
+
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+
               return (
-                <div key={t.id} className="p-4 rounded-2xl border border-stone-200 flex justify-between items-center">
-                  <div className="space-y-1">
-                    <h4 className="font-bold text-sm text-stone-900 line-clamp-1">
-                      {lang === 'bn' ? t.titleBn : t.titleEn}
-                    </h4>
-                    <span className="text-xs text-amber-800 font-bold block">
-                      {formatPrice(t.priceAdult, lang)}
-                    </span>
-                    <span className="text-[11px] text-stone-500">
-                      {lang === 'bn' ? `বুকড: ${toBnNum(t.bookedSeats)} / মোট ${toBnNum(t.totalSeats)}` : `Booked: ${t.bookedSeats} / Total ${t.totalSeats}`}
-                    </span>
+                <button
+                  key={item.id}
+                  onClick={() => handleSelectTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-amber-700 text-white shadow-sm font-bold'
+                      : 'text-stone-700 hover:bg-stone-100 hover:text-stone-950'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-amber-200' : 'text-stone-500'}`} />
+                    <span>{lang === 'bn' ? item.labelBn : item.labelEn}</span>
                   </div>
 
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                    t.status === 'Almost Full' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    {lang === 'bn' ? `${toBnNum(rem)} টি আসন বাকি` : `${rem} Left`}
-                  </span>
-                </div>
+                  {item.badge > 0 && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isActive ? 'bg-white text-amber-900' : 'bg-rose-100 text-rose-700'
+                    }`}>
+                      {lang === 'bn' ? toBnNum(item.badge) : item.badge}
+                    </span>
+                  )}
+                </button>
               );
             })}
           </div>
-        </div>
-      )}
+        </aside>
 
-      {/* Travel Pass Preview Modal */}
-      {selectedPassBooking && (
-        <TravelPassModal
-          booking={selectedPassBooking}
-          onClose={() => setSelectedPassBooking(null)}
-        />
-      )}
+        {/* Mobile Drawer */}
+        {mobileSidebarOpen && (
+          <div className="fixed inset-0 z-40 md:hidden bg-stone-950/70 backdrop-blur-sm flex">
+            <div className="w-64 bg-white h-full p-4 flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between pb-3 mb-2 border-b border-stone-200">
+                <span className="font-bold text-stone-900 text-sm">
+                  {lang === 'bn' ? 'অ্যাডমিন মেনু' : 'Admin Navigation'}
+                </span>
+                <button
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className="p-1 text-stone-500 hover:text-stone-800"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
+              <div className="flex-1 space-y-1 overflow-y-auto">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleSelectTab(item.id)}
+                      className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                        isActive
+                          ? 'bg-amber-700 text-white shadow-sm font-bold'
+                          : 'text-stone-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Icon className={`w-4 h-4 ${isActive ? 'text-amber-200' : 'text-stone-500'}`} />
+                        <span>{lang === 'bn' ? item.labelBn : item.labelEn}</span>
+                      </div>
+                      {item.badge > 0 && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="pt-3 border-t border-stone-200">
+                <button
+                  onClick={adminLogout}
+                  className="w-full py-2 bg-rose-100 hover:bg-rose-200 text-rose-800 font-semibold text-xs rounded-xl flex items-center justify-center gap-2"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>{lang === 'bn' ? 'লগআউট' : 'Logout'}</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1" onClick={() => setMobileSidebarOpen(false)}></div>
+          </div>
+        )}
+
+        {/* Main Tab Content View */}
+        <main className="flex-1 min-w-0">
+          {activeTab === 'dashboard' && (
+            <AdminDashboardTab
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              onSelectBooking={handleDashboardBookingSelect}
+            />
+          )}
+
+          {activeTab === 'tours' && <AdminToursTab />}
+
+          {activeTab === 'bookings' && (
+            <AdminBookingsTab initialSelectedId={selectedBookingId} />
+          )}
+
+          {activeTab === 'customers' && <AdminCustomersTab />}
+
+          {activeTab === 'payments' && <AdminPaymentsTab />}
+
+          {activeTab === 'reports' && <AdminReportsTab />}
+
+          {activeTab === 'notifications' && (
+            <AdminNotificationsTab
+              onSelectBooking={handleDashboardBookingSelect}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+            />
+          )}
+
+          {activeTab === 'reviews' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-stone-200/80 shadow-sm">
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold font-serif text-stone-900">
+                    {lang === 'bn' ? 'যাত্রী রিভিউ ও প্রতিক্রিয়া অনুমোদন' : 'Pilgrim Reviews Moderation'}
+                  </h2>
+                  <p className="text-xs text-stone-500">
+                    {lang === 'bn' 
+                      ? 'ওয়েবসাইটে প্রকাশের পূর্বে তীর্থযাত্রীদের মতামতের সত্যতা যাচাই ও অনুমোদন করুন।' 
+                      : 'Audit and approve traveler feedback before displaying publicly.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-stone-200/80 shadow-sm divide-y divide-stone-100 overflow-hidden">
+                {reviews.length === 0 ? (
+                  <div className="py-12 text-center text-stone-400 text-xs">
+                    {lang === 'bn' ? 'কোনো রিভিউ পাওয়া যায়নি।' : 'No reviews recorded.'}
+                  </div>
+                ) : (
+                  reviews.map((r) => (
+                    <div key={r.id} className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-stone-50 transition-colors">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-stone-900 text-xs">{r.name}</span>
+                          <span className="text-[10px] text-stone-400">({r.location})</span>
+                          <div className="flex text-amber-500">
+                            {[...Array(r.rating)].map((_, i) => (
+                              <Star key={i} className="w-3 h-3 fill-amber-500 text-amber-500" />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-xs text-stone-600 leading-relaxed italic">
+                          "{r.comment}"
+                        </p>
+                        <div className="text-[10px] text-stone-400 font-mono">
+                          {r.tourName} • {r.date}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {r.isApproved ? (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                            {lang === 'bn' ? 'অনুমোদিত' : 'Approved'}
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              approveReview(r.id);
+                              showToast(lang === 'bn' ? 'রিভিউটি সফলভাবে অনুমোদিত হয়েছে!' : 'Review approved!', 'success');
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{lang === 'bn' ? 'অনুমোদন করুন' : 'Approve'}</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (window.confirm(lang === 'bn' ? 'রিভিউটি মুছে ফেলতে চান?' : 'Delete review?')) {
+                              deleteReview(r.id);
+                              showToast(lang === 'bn' ? 'রিভিউ মুছে ফেলা হয়েছে।' : 'Review deleted.', 'info');
+                            }
+                          }}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'settings' && <AdminSettingsTab />}
+        </main>
+      </div>
     </div>
   );
 };

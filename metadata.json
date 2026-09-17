@@ -2,5 +2,7 @@
   "name": "Tirthobondhu Tour & Travels - তীর্থবন্ধু ট্যুর অ্যান্ড ট্রাভেলস",
   "description": "Official platform for Tirthobondhu Tour & Travels — Pilgrimage & Religious Travel Service, domestic and international tours with seamless booking and customer support.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
